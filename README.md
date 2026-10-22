@@ -4,8 +4,12 @@ A RESTful API for the CourseMaster E-learning platform built with Node.js, Expre
 
 Video Link: https://drive.google.com/file/d/1vjMrBxr0-7xqjxMX2EBEBw30D_av1pOu/view
 
-Admin email: admin@coursemaster.com
-Pass: admin123
+Demo accounts created by `npm run seed` (local development only - change or remove them in any real deployment):
+
+| Role | Email | Password |
+|------|-------|----------|
+| Admin | admin@coursemaster.com | admin123 |
+| Student | student@coursemaster.com | student123 |
 
 ## Project Name & Description
 
@@ -23,6 +27,8 @@ Pass: admin123
 
 ## Installation
 
+**Prerequisites:** Node.js 18+ and a running MongoDB (local install or a MongoDB Atlas connection string).
+
 1. Clone the repository
 2. Navigate to the backend directory:
    ```bash
@@ -34,17 +40,30 @@ Pass: admin123
    npm install
    ```
 
-4. Create a `.env` file in the root directory (see `.env.example`)
+4. Create your environment file from the template and fill in the values
+   (at least `MONGODB_URI` and `JWT_SECRET`):
+   ```bash
+   cp .env.example .env        # Windows PowerShell: Copy-Item .env.example .env
+   ```
 
-5. Start the development server:
+5. (Optional) Load demo data - courses, users, enrollments. **This deletes existing data in that database.**
+   ```bash
+   npm run seed
+   ```
+
+6. Start the development server (auto-restarts on changes):
    ```bash
    npm run dev
    ```
+   The API is now available at `http://localhost:5000` - opening it in a browser shows
+   "Course Master Backend Running". The API itself lives under `http://localhost:5000/api`.
 
-6. Start the production server:
+7. Start the production server:
    ```bash
    npm start
    ```
+
+Then set up the frontend (`courseMaster_frontEnd`) and point its `VITE_API_BASE_URL` to `http://localhost:5000/api`.
 
 ## Environment Variables
 
@@ -82,7 +101,8 @@ FRONTEND_URL=http://localhost:5173
 - `NODE_ENV` - Environment mode (development/production)
 - `ADMIN_REGISTRATION_KEY` - Secret key for admin account registration (optional)
   - If set, users can register as admin by providing this key during registration
-  - If not set, admin registration via key is disabled
+  - A wrong key is rejected with `403` and no account is created
+  - If not set, admin registration via key is disabled (any `adminKey` is rejected)
   - Admins can still be created manually in the database
 - `EMAIL_SERVICE` - Email service provider (gmail, smtp, etc.)
 - `EMAIL_USER` - Email address for sending welcome emails
@@ -98,7 +118,7 @@ FRONTEND_URL=http://localhost:5173
 
 ## API Documentation
 
-Base URL: `http://localhost:5000/api/api`
+Base URL: `http://localhost:5000/api`
 
 ### Authentication Endpoints
 
@@ -117,7 +137,8 @@ Base URL: `http://localhost:5000/api/api`
 - **Note:** 
   - By default, users are registered as "student"
   - To register as "admin", provide a valid `adminKey` that matches `ADMIN_REGISTRATION_KEY` in environment variables
-  - If invalid admin key is provided, registration will fail
+  - If an invalid admin key is provided, registration fails with `403` (a `role` sent by the client is always ignored)
+  - Validation errors return `400` with a readable `message` and an `errors` list of `{ field, message }`
 
 #### Login
 - **POST** `/api/auth/login`
@@ -344,8 +365,8 @@ Common HTTP Status Codes:
 - `200` - Success
 - `201` - Created
 - `400` - Bad Request
-- `401` - Unauthorized
-- `403` - Forbidden
+- `401` - Unauthorized (missing, invalid or expired token)
+- `403` - Forbidden (not an admin, banned account, wrong admin key)
 - `404` - Not Found
 - `500` - Internal Server Error
 
@@ -372,7 +393,7 @@ Admins can be created in two ways:
    - Set `ADMIN_REGISTRATION_KEY` in your `.env` file
    - During registration, provide the admin key in the registration form
    - If the key matches, the user will be created as "admin"
-   - If the key is invalid or missing, registration will fail or create a student account
+   - If the key is missing, a student account is created; if it is wrong, registration fails (`403`)
 
 2. **Manual Database Method**:
    - Create admin users directly in the database
