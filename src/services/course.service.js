@@ -1,6 +1,9 @@
 // service to handle course-related operations
 
 const Course = require("../models/Course");
+const isObjectId = require("../utils/isObjectId");
+
+const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const getCourses = async (query) => {
   const {
@@ -19,9 +22,11 @@ const getCourses = async (query) => {
   const filter = {};
 
   if (search && typeof search === "string") {
+    // treat the search text literally, not as a regular expression
+    const pattern = escapeRegex(search.trim());
     filter.$or = [
-      { title: { $regex: search, $options: "i" } },
-      { instructorName: { $regex: search, $options: "i" } },
+      { title: { $regex: pattern, $options: "i" } },
+      { instructorName: { $regex: pattern, $options: "i" } },
     ];
   }
 
@@ -59,6 +64,7 @@ const getCourses = async (query) => {
 };
 
 const getCourseById = async (id) => {
+  if (!isObjectId(id)) throw new Error("Course not found");
   const course = await Course.findById(id);
   if (!course) throw new Error("Course not found");
   return course;
