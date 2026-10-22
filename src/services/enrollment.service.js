@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const Enrollment = require("../models/Enrollment");
 const Course = require("../models/Course");
 
@@ -32,9 +33,24 @@ const getMyEnrollments = async (studentId) => {
     .sort({ createdAt: -1 });
 };
 
-const completeLesson = async (enrollId, lessonId) => {
-  const enrollment = await Enrollment.findById(enrollId);
+const completeLesson = async (studentId, enrollId, lessonId) => {
+  if (!mongoose.isValidObjectId(enrollId) || !mongoose.isValidObjectId(lessonId)) {
+    throw new Error("Invalid enrollment or lesson id");
+  }
+
+  // only the owner of the enrollment may update it
+  const enrollment = await Enrollment.findOne({ _id: enrollId, student: studentId });
   if (!enrollment) throw new Error("Enrollment not found");
+
+  const course = await Course.findById(enrollment.course);
+  if (!course) throw new Error("Course not found");
+
+  const lessonIds = course.syllabus.flatMap((mod) =>
+    mod.lessons.map((lesson) => String(lesson._id))
+  );
+  if (!lessonIds.includes(String(lessonId))) {
+    throw new Error("Lesson not found in this course");
+  }
 
   // avoid duplicates
   const alreadyDone = enrollment.progress.completedLessons
@@ -46,18 +62,11 @@ const completeLesson = async (enrollId, lessonId) => {
   }
 
   // calculate percent
-  const course = await Course.findById(enrollment.course);
-  const totalLessons = course.syllabus.reduce(
-    (sum, mod) => sum + mod.lessons.length,
-    0
-  );
-
   const completed = enrollment.progress.completedLessons.length;
   enrollment.progress.percent =
-    totalLessons === 0 ? 0 : Math.round((completed / totalLessons) * 100);
+    lessonIds.length === 0 ? 0 : Math.round((completed / lessonIds.length) * 100);
 
-  // Missing await on async Mongoose save (Code-9 bug)
-  enrollment.save();
+  await enrollment.save();
   return enrollment;
 };
 
