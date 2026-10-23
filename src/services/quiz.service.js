@@ -1,11 +1,23 @@
 const Course = require("../models/Course");
 const Enrollment = require("../models/Enrollment");
 const QuizSubmission = require("../models/QuizSubmission");
+const isObjectId = require("../utils/isObjectId");
+
+// the quiz questions of one lesson, or null if the lesson is not in the course
+const findLessonQuiz = (course, lessonId) => {
+  for (const mod of course.syllabus) {
+    const lesson = mod.lessons.id(lessonId);
+    if (lesson) return lesson.quiz || [];
+  }
+  return null;
+};
 
 const submitQuiz = async (studentId, payload) => {
   const { courseId, lessonId, answers } = payload;
   // answers = [selectedIndex, selectedIndex, ...]
   if (!Array.isArray(answers)) throw new Error("answers must be an array");
+  if (!isObjectId(courseId)) throw new Error("Invalid course id");
+  if (!isObjectId(lessonId)) throw new Error("Invalid lesson id");
 
   const enrolled = await Enrollment.findOne({ student: studentId, course: courseId });
   if (!enrolled) throw new Error("You are not enrolled in this course");
@@ -14,16 +26,20 @@ const submitQuiz = async (studentId, payload) => {
   if (!course) throw new Error("Course not found");
 
   // find lesson quiz
-  let quiz = null;
-  for (const mod of course.syllabus) {
-    const lesson = mod.lessons.id(lessonId);
-    if (lesson) {
-      quiz = lesson.quiz || [];
-      break;
-    }
-  }
+  const quiz = findLessonQuiz(course, lessonId);
   if (!quiz) throw new Error("Lesson not found");
   if (quiz.length === 0) throw new Error("No quiz in this lesson");
+
+  // exactly one answer per question, each one of the question's options
+  if (answers.length !== quiz.length) {
+    throw new Error(`Answer all ${quiz.length} questions (received ${answers.length})`);
+  }
+  answers.forEach((answer, i) => {
+    const optionCount = quiz[i].options.length;
+    if (!Number.isInteger(answer) || answer < 0 || answer >= optionCount) {
+      throw new Error(`Answer ${i + 1} must be a whole number from 0 to ${optionCount - 1}`);
+    }
+  });
 
   let score = 0;
   quiz.forEach((q, i) => {
@@ -66,17 +82,32 @@ const submitQuiz = async (studentId, payload) => {
     score,
     percent,
     createdAt: submission.createdAt,
+    // revealed only now that the attempt is saved
+    correctAnswers: quiz.map((q) => q.correctIndex),
   };
 };
 
 // Get quiz submissions for a student in a specific course
 const getMyQuizSubmissions = async (studentId, courseId = null) => {
+  if (courseId && !isObjectId(courseId)) throw new Error("Invalid course id");
   const filter = { student: studentId };
   if (courseId) filter.course = courseId;
 
-  return QuizSubmission.find(filter)
+  const submissions = await QuizSubmission.find(filter)
     .populate("course", "title")
     .sort({ createdAt: -1 });
+
+  // for a single course, attach the right answers of each submitted quiz so
+  // the player can show a review (the course API never sends them)
+  if (!courseId) return submissions;
+  const course = await Course.findById(courseId);
+  return submissions.map((submission) => {
+    const data = submission.toObject();
+    data.correctAnswers = course
+      ? (findLessonQuiz(course, submission.lessonId) || []).map((q) => q.correctIndex)
+      : [];
+    return data;
+  });
 };
 
 // Get quiz statistics for a course

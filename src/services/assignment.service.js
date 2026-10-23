@@ -1,12 +1,65 @@
 const AssignmentSubmission = require("../models/AssignmentSubmission");
 const Enrollment = require("../models/Enrollment");
+const Course = require("../models/Course");
+const isObjectId = require("../utils/isObjectId");
+
+const MAX_ANSWER_LENGTH = 5000;
+
+const isHttpUrl = (text) => {
+  try {
+    const url = new URL(text);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+};
+
+// the lesson with this id, or null if it is not in the course
+const findLesson = (course, lessonId) => {
+  for (const mod of course.syllabus) {
+    const lesson = mod.lessons.id(lessonId);
+    if (lesson) return lesson;
+  }
+  return null;
+};
 
 const submitAssignment = async (studentId, payload) => {
-  const { courseId, lessonId, answerType, answer } = payload;
+  const { courseId, lessonId, answerType } = payload;
+
+  if (!isObjectId(courseId)) throw new Error("Invalid course id");
+  if (!isObjectId(lessonId)) throw new Error("Invalid lesson id");
+  if (answerType !== "text" && answerType !== "link") {
+    throw new Error('answerType must be "text" or "link"');
+  }
+
+  const answer = typeof payload.answer === "string" ? payload.answer.trim() : "";
+  if (!answer) throw new Error("Answer cannot be empty");
+  if (answer.length > MAX_ANSWER_LENGTH) {
+    throw new Error(`Answer must be at most ${MAX_ANSWER_LENGTH} characters`);
+  }
+  if (answerType === "link" && !isHttpUrl(answer)) {
+    throw new Error("Link must be a valid http or https URL");
+  }
 
   // ensure student enrolled
   const enrolled = await Enrollment.findOne({ student: studentId, course: courseId });
   if (!enrolled) throw new Error("You are not enrolled in this course");
+
+  // the lesson must belong to this course and actually have an assignment
+  const course = await Course.findById(courseId);
+  if (!course) throw new Error("Course not found");
+  const lesson = findLesson(course, lessonId);
+  if (!lesson || !lesson.assignmentPrompt) {
+    throw new Error("This lesson has no assignment in this course");
+  }
+
+  // one submission per student and lesson
+  const existing = await AssignmentSubmission.findOne({
+    student: studentId,
+    course: courseId,
+    lessonId,
+  });
+  if (existing) throw new Error("You have already submitted this assignment");
 
   const submission = await AssignmentSubmission.create({
     student: studentId,

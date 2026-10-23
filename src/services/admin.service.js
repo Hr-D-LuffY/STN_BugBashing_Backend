@@ -117,36 +117,38 @@ const reviewAssignment = async (id, payload, adminId) => {
 // Get analytics data for dashboard
 const getAnalytics = async () => {
   // Get enrollments grouped by date (last 30 days)
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  thirtyDaysAgo.setHours(0, 0, 0, 0);
+  // Day buckets and enrollments must use the same date function, otherwise
+  // the days drift apart in time zones ahead of UTC (toISOString is UTC).
+  const dayKey = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+  // the last 30 days including today, starting at local midnight
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - 29);
+  startDate.setHours(0, 0, 0, 0);
 
   const enrollments = await Enrollment.find({
-    createdAt: { $gte: thirtyDaysAgo }
+    createdAt: { $gte: startDate }
   }).sort({ createdAt: 1 });
 
   // Group by date
   const enrollmentData = {};
   enrollments.forEach(enrollment => {
-    const date = enrollment.createdAt.toISOString().split('T')[0];
+    const date = dayKey(enrollment.createdAt);
     enrollmentData[date] = (enrollmentData[date] || 0) + 1;
   });
 
   // Convert to array format for chart (last 30 days)
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const chartData = [];
-  for (let i = 29; i >= 0; i--) {
-    const date = new Date();
-    date.setDate(date.getDate() - i);
-    date.setHours(0, 0, 0, 0);
-    const dateStr = date.toISOString().split('T')[0];
-
-    // Format date for display (e.g., "Jan 15")
-    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const displayDate = `${monthNames[date.getMonth()]} ${date.getDate()}`;
+  for (let i = 0; i < 30; i++) {
+    const date = new Date(startDate);
+    date.setDate(startDate.getDate() + i);
+    const dateStr = dayKey(date);
 
     chartData.push({
       date: dateStr,
-      displayDate: displayDate,
+      displayDate: `${monthNames[date.getMonth()]} ${date.getDate()}`,
       enrollments: enrollmentData[dateStr] || 0
     });
   }
