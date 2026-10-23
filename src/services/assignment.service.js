@@ -76,10 +76,13 @@ const getMySubmissions = async (studentId, courseId = null) => {
   const filter = { student: studentId };
   if (courseId) filter.course = courseId;
 
-  return AssignmentSubmission.find(filter)
+  const submissions = await AssignmentSubmission.find(filter)
     .populate("course", "title")
     .populate("reviewer", "name")
     .sort({ createdAt: -1 });
+
+  // a deleted course leaves no entry behind
+  return submissions.filter((submission) => submission.course);
 };
 
 // Get assignment statistics for a course

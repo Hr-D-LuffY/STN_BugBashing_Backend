@@ -3,6 +3,7 @@
 const Course = require("../models/Course");
 const Enrollment = require("../models/Enrollment");
 const AssignmentSubmission = require("../models/AssignmentSubmission");
+const QuizSubmission = require("../models/QuizSubmission");
 const User = require("../models/User");
 const isObjectId = require("../utils/isObjectId");
 
@@ -15,7 +16,7 @@ const createCourse = async (payload) => {
 
 const updateCourse = async (id, payload) => {
   if (!isObjectId(id)) throw new Error("Course not found");
-  const course = await Course.findByIdAndUpdate(id, payload, { new: true });
+  const course = await Course.findByIdAndUpdate(id, payload, { new: true, runValidators: true });
   if (!course) throw new Error("Course not found");
   return course;
 };
@@ -24,6 +25,13 @@ const deleteCourse = async (id) => {
   if (!isObjectId(id)) throw new Error("Course not found");
   const course = await Course.findByIdAndDelete(id);
   if (!course) throw new Error("Course not found");
+
+  // remove everything that belonged to the course so nothing is left orphaned
+  await Promise.all([
+    Enrollment.deleteMany({ course: id }),
+    QuizSubmission.deleteMany({ course: id }),
+    AssignmentSubmission.deleteMany({ course: id }),
+  ]);
   return { message: "Course deleted" };
 };
 
@@ -35,10 +43,13 @@ const getEnrollments = async (query) => {
   if (courseId) filter.course = courseId;
   if (batchId) filter.batchId = batchId;
 
-  return Enrollment.find(filter)
+  const enrollments = await Enrollment.find(filter)
     .populate("student", "name email")
     .populate("course", "title instructorName")
     .sort({ createdAt: -1 });
+
+  // skip leftovers of a deleted student or course
+  return enrollments.filter((enrollment) => enrollment.student && enrollment.course);
 };
 
 // ✅ NEW: get all assignment submissions (optional ?courseId= filter)
@@ -55,8 +66,8 @@ const getAssignments = async (query = {}) => {
     .populate("reviewer", "name")
     .sort({ createdAt: -1 });
 
-  // Add lesson title to each submission
-  const submissionsWithLessonTitle = submissions.map((sub) => {
+  // Add lesson title to each submission (skipping leftovers of a deleted student or course)
+  const submissionsWithLessonTitle = submissions.filter((sub) => sub.student && sub.course).map((sub) => {
     const submissionObj = sub.toObject();
     let lessonTitle = "Unknown Lesson";
 

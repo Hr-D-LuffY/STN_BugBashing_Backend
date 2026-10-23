@@ -93,9 +93,11 @@ const getMyQuizSubmissions = async (studentId, courseId = null) => {
   const filter = { student: studentId };
   if (courseId) filter.course = courseId;
 
-  const submissions = await QuizSubmission.find(filter)
+  const found = await QuizSubmission.find(filter)
     .populate("course", "title")
     .sort({ createdAt: -1 });
+  // a deleted course leaves no entry behind
+  const submissions = found.filter((submission) => submission.course);
 
   // for a single course, attach the right answers of each submitted quiz so
   // the player can show a review (the course API never sends them)

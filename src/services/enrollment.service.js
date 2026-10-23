@@ -33,9 +33,12 @@ const enrollCourse = async (studentId, courseId, batchId = null) => {
 };
 
 const getMyEnrollments = async (studentId) => {
-  return Enrollment.find({ student: studentId })
+  const enrollments = await Enrollment.find({ student: studentId })
     .populate("course", "title instructorName price category tags")
     .sort({ createdAt: -1 });
+
+  // a deleted course leaves no entry behind
+  return enrollments.filter((enrollment) => enrollment.course);
 };
 
 const completeLesson = async (studentId, enrollId, lessonId) => {
